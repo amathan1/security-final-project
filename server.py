@@ -4,22 +4,31 @@ import traceback
 from threading import Thread
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.PublicKey import RSA
+from Crypto.Signature import PKCS1_v1_5
+from Crypto.Hash import SHA
 
 
 class Server:
 
-	def __init__(self, host_no, port_no):
+	def __init__(self, host_no, port_no, max_people=5):
 		'''Initialize the host ip and port number'''
 
 		self.host_no = host_no
 		self.port_no = port_no
+		
+		# Parameters
+		self.people_voted = 0
+		self.max_people = max_people
+		self.people = self.generate_map()
+		self.state = 0
+
+		# Socket
 		self.soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		key = open("client_key.pem", "r").read()
+		
+		# Server cipher
+		key = open("server_key.pem","rb").read()		
 		self.key = RSA.importKey(key)
-		self.public_key = self.key.publickey()	# We use the public key of server for encryption
-		key = open("server_key.pem","r").read()		
-		self.key = RSA.importKey(key)	# Now we use this key for decryption
-		threads = list()	# Used for joining threads in the end
+		self.server_cipher = PKCS1_OAEP.new(self.key)
 
 
 	def establish_server(self):
@@ -52,13 +61,28 @@ class Server:
 		self.soc.close()
 
 
-	def client_thread(self, connection, ip, port, max_buffer_size = 1024):
+	def client_thread(self, connection, ip, port, max_buffer_size = 4096):
+
+		print ("We are inside the client")
+
+		approved = self.authenticate(connection.recv(4096))
+
+		if not approved:
+			connection.sendall("0".encode("utf8"))
+		else:
+			connection.sendall("1".encode("utf8")) 
 
 		is_active = True
 
 		while is_active:
 
-			client_input = self.receive_input(connection, max_buffer_size)
+			try:
+				client_input = self.process(connection.recv(4096))
+
+			except:
+				connection.close()
+				break
+
 
 			if client_input == "4":
 				connection.close()
@@ -69,25 +93,64 @@ class Server:
 				print ("Processed result : {}".format(client_input))
 				connection.sendall("-".encode("utf8"))
 
+		return True
 
 
-	def receive_input(self, connection, max_buffer_size):
+	def authenticate(self, __input):
 
-		client_input = connection.recv(max_buffer_size)
-		cipher = PKCS1_OAEP.new(self.key)
-		decoded_input = cipher.decrypt(client_input)
-		decoded_input = decoded_input.decode("utf8").rstrip()  # decode and strip end of line
+		client_input = __input
+		details, signature = client_input[:256], client_input[256:]
+		decoded_input = self.server_cipher.decrypt(details)
+		decoded_input = decoded_input.decode("utf8")
+		name, v_number = decoded_input.split()
+		try:
+			assert(self.people[name] == v_number)
+		except:
+			return False
 
-		return str(decoded_input)
+		key = RSA.importKey((open(name+".pem", "r")).read())
+		key = key.publickey()
+		_hash = SHA.new(name.encode("utf8"))
+		verifier = PKCS1_v1_5.new(key)
+		return verifier.verify(_hash, signature)
 
 
-	def process_input(self, input_str):
 
-	    
+	def process(self, client_input):
+
+		pass
 
 
-	    return 
+	def generate_map(self):
 
+		_file = open("voterinfo.txt", "r")
+		_hist = open("history.txt", "r")
+		v_info = dict()
+		voted = dict()
+
+		cur_str = _file.readlines().split()
+		cur_hst = _file.readlines().split()
+
+		for n, i in enumerate(cur_str[0]):
+			v_info[i] = cur_str[1][n]
+			voted[i] = cur_hst[1][n]
+
+
+		# while (cur_str is not ""):
+		# 	name, num = cur_str.split()
+		# 	_, hist = cur_hst.split()
+		# 	print ("We are now reading ", name)
+		# 	v_info[name] = num
+		# 	v_hist[name] = hist
+		# 	cur_str = _file.readline()
+		# 	cur_hst = _hist.readline()
+
+		print("Total length : ", len(v_hist.keys()))
+
+		for i in v_info.keys():
+			print (i, v_info[i], v_hist[i])
+
+		return v_info
 
 
 
