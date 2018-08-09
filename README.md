@@ -5,3 +5,4 @@
 - Client is very simple
 - Requests from client to server is encrypted using public-key-cryptography
 - Server authenticates client by checking Digital Signature
+- People vote
